@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Location Tracker - India</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+        body { margin: 0; padding: 0; font-family: Arial, sans-serif; }
+        #map { height: 100vh; width: 100%; }
+        #status { 
+            position: absolute; 
+            top: 10px; 
+            left: 10px; 
+            background: rgba(255, 255, 255, 0.95); 
+            padding: 12px; 
+            border-radius: 8px; 
+            z-index: 1000; 
+            box-shadow: 0 0 15px rgba(0,0,0,0.4); 
+            max-width: 320px;
+            line-height: 1.6;
+            font-size: 14px;
+        }
+        #clearTrail {
+            margin-top: 12px;
+            padding: 10px 16px;
+            background: #ff4444;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            width: 100%;
+        }
+        #clearTrail:hover { background: #cc0000; }
+    </style>
+</head>
+<body>
+    <div id="status">
+        Getting your location...
+        <button id="clearTrail">Clear Trail & Reset Distance</button>
+    </div>
+    <div id="map"></div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        function haversineDistance(coord1, coord2) {
+            const R = 6371000;
+            const lat1 = coord1[0] * Math.PI / 180;
+            const lat2 = coord2[0] * Math.PI / 180;
+            const deltaLat = (coord2[0] - coord1[0]) * Math.PI / 180;
+            const deltaLng = (coord2[1] - coord1[1]) * Math.PI / 180;
+
+            const a = Math.sin(deltaLat/2) * Math.sin(deltaLat/2) +
+                      Math.cos(lat1) * Math.cos(lat2) *
+                      Math.sin(deltaLng/2) * Math.sin(deltaLng/2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+            return R * c;
+        }
+
+        const map = L.map('map', {
+            center: [20.5937, 78.9629],
+            zoom: 5,
+            minZoom: 4,
+            maxBounds: [[5, 65], [37, 99]],
+            maxBoundsViscosity: 1.0
+        });
+
+        L.tileLayer('https://tile.openfreemap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenFreeMap | © OpenStreetMap contributors',
+            maxZoom: 19
+        }).addTo(map);
+
+        let marker, accuracyCircle, polyline;
+        let trailPoints = [];
+        let totalDistance = 0;
+
+        polyline = L.polyline(trailPoints, { color: 'red', weight: 5, opacity: 0.9 }).addTo(map);
+
+        function updateStatus(lat, lng, accuracy) {
+            const km = (totalDistance / 1000).toFixed(2);
+            const miles = (totalDistance / 1609.34).toFixed(2);
+            document.getElementById('status').innerHTML = `
+                <strong>Location:</strong> ${lat.toFixed(6)}, ${lng.toFixed(6)}<br>
+                <strong>Accuracy:</strong> ±${accuracy.toFixed(0)} m<br>
+                <strong>Points:</strong> ${trailPoints.length}<br>
+                <strong>Distance:</strong> ${km} km (${miles} mi)<br>
+                <button id="clearTrail">Clear Trail & Reset Distance</button>
+            `;
+        }
+
+        if ('geolocation' in navigator) {
+            navigator.geolocation.watchPosition(
+                (position) => {
+                    const lat = position.coords.latitude;
+                    const lng = position.coords.longitude;
+                    const accuracy = position.coords.accuracy;
+                    const pos = [lat, lng];
+
+                    if (trailPoints.length > 0) {
+                        totalDistance += haversineDistance(trailPoints[trailPoints.length - 1], pos);
+                    }
+                    trailPoints.push(pos);
+                    polyline.setLatLngs(trailPoints);
+
+                    if (!marker) {
+                        marker = L.marker(pos).addTo(map).bindPopup('You are here!').openPopup();
+                    } else {
+                        marker.setLatLng(pos);
+                    }
+
+                    if (!accuracyCircle) {
+                        accuracyCircle = L.circle(pos, { radius: accuracy, color: 'blue', fillOpacity: 0.1 }).addTo(map);
+                    } else {
+                        accuracyCircle.setLatLng(pos).setRadius(accuracy);
+                    }
+
+                    if (trailPoints.length === 1) map.setView(pos, 16);
+                    else map.panTo(pos);
+
+                    updateStatus(lat, lng, accuracy);
+                },
+                (error) => {
+                    document.getElementById('status').innerHTML = `Error: ${error.message}<br><button id="clearTrail">Clear Trail & Reset</button>`;
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+
+            document.getElementById('status').addEventListener('click', (e) => {
+                if (e.target.id === 'clearTrail') {
+                    trailPoints = [];
+                    totalDistance = 0;
+                    polyline.setLatLngs([]);
+                    document.getElementById('status').innerHTML = 'Trail cleared! Waiting for location...<br><button id="clearTrail">Clear Trail & Reset Distance</button>';
+                }
+            });
+        } else {
+            document.getElementById('status').textContent = 'Geolocation not supported.';
+        }
+    </script>
+</body>
+</html>
